@@ -7,6 +7,7 @@ import java.util.concurrent.*;
 public class TurnoServer {
 
     static ConcurrentHashMap<Integer, String> lista = new ConcurrentHashMap<>();
+    static ConcurrentHashMap<Integer, PrintWriter> clientesConectados = new ConcurrentHashMap<>();
     static int turnoActual = 1;
 
     public static void main(String[] args) throws IOException {
@@ -38,6 +39,7 @@ public class TurnoServer {
     }
 
     static void atenderPaciente(Socket socket) {
+        int turnoAsignado = -1;
         try (
                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))
@@ -48,15 +50,26 @@ public class TurnoServer {
                     out.println("Hasta luego.");
                     break;
                 }
-                synchronized (TurnoServer.class) {
-                    int turnoAsignado = turnoActual++;
-                    lista.put(turnoAsignado, "ASIGNADO");
-                    System.out.println("Paciente - Turno asignado: " + turnoAsignado);
-                    out.println("Su turno asignado es: " + turnoAsignado + " Estado: ASIGNADO");
+                if (turnoAsignado == -1) {
+                    synchronized (TurnoServer.class) {
+                        turnoAsignado = turnoActual++;
+                        lista.put(turnoAsignado, "CREATED");
+                        clientesConectados.put(turnoAsignado, out);
+                    }
+                    System.out.println("Paciente Turno asignado: " + turnoAsignado);
+                    out.println("Su turno asignado es: " + turnoAsignado + " - Estado: CREATED");
+                    out.println("Espere aquí, recibirá un aviso cuando lo llamen");
+                } else {
+                    out.println("Ya tiene el turno " + turnoAsignado + " Estado actual: " + lista.get(turnoAsignado));
                 }
             }
         } catch (IOException e) {
-            System.err.println("Error con cliente paciente: " + e.getMessage());
+            System.err.println("Error con paciente: " + e.getMessage());
+        } finally {
+            if (turnoAsignado != -1) {
+                clientesConectados.remove(turnoAsignado);
+                System.out.println("Servidor Paciente turno " + turnoAsignado + " desconectado.");
+            }
         }
     }
 
@@ -80,15 +93,27 @@ public class TurnoServer {
                         lista.forEach((t, estado) ->
                                 out.println("  Turno " + t + ": " + estado));
                     }
+                    out.println("");
                 } else if (input.toUpperCase().startsWith("LLAMAR ")) {
                     try {
                         int nroTurno = Integer.parseInt(input.substring(7).trim());
-                        if (lista.containsKey(nroTurno)) {
-                            lista.put(nroTurno, "CALLED");
-                            System.out.println("Recepción - Turno " + nroTurno + ": CALLED");
-                            out.println("Turno " + nroTurno + " actualizado a: CALLED");
-                        } else {
+                        if (!lista.containsKey(nroTurno)) {
                             out.println("El turno " + nroTurno + " no existe.");
+                            out.println("");
+                            continue;
+                        }
+
+                        lista.put(nroTurno, "CALLED");
+                        System.out.println("Recepción Turno " + nroTurno + " -> CALLED");
+                        out.println("Turno " + nroTurno + " actualizado a: CALLED");
+                        out.println("");
+
+                        PrintWriter pacienteOut = clientesConectados.get(nroTurno);
+                        if (pacienteOut != null) {
+                            pacienteOut.println("Su turno " + nroTurno + " ha sido llamado");
+                        } else {
+                            out.println("(El paciente del turno " + nroTurno + " ya no está conectado)");
+                            out.println("");
                         }
                     } catch (NumberFormatException e) {
                         out.println("Formato inválido. Usá: LLAMAR <número>");
