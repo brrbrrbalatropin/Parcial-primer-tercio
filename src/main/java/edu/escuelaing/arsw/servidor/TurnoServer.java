@@ -51,7 +51,7 @@ public class TurnoServer {
                 synchronized (TurnoServer.class) {
                     int turnoAsignado = turnoActual++;
                     lista.put(turnoAsignado, "ASIGNADO");
-                    System.out.println("Paciente Turno asignado: " + turnoAsignado);
+                    System.out.println("Paciente - Turno asignado: " + turnoAsignado);
                     out.println("Su turno asignado es: " + turnoAsignado + " Estado: ASIGNADO");
                 }
             }
